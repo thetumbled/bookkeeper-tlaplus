@@ -56,8 +56,8 @@ ReadTimeoutCount(cid, ensemble, recovery) ==
     ELSE 0
 
 \* filter those messages Filter(_) return TRUE.
-ClearMessages(messages, Filter(_)) ==
-    messages' = [m \in {m \in DOMAIN messages : ~Filter(m)} |-> messages[m]]
+ClearMessages(messages2, Filter(_)) ==
+    messages' = [m \in {m \in DOMAIN messages2 : ~Filter(m)} |-> messages2[m]]
 
 ClearWriteTimeout(cid, bookies, recovery) ==
     ClearMessages(messages, LAMBDA m: /\ (m.type = AddEntryRequestMessage \/ m.type = AddEntryResponseMessage)
@@ -107,7 +107,7 @@ ProcessedOneAndSendAnother(received_msg, send_msg) ==
     /\ send_msg \notin DOMAIN messages
     /\ messages[received_msg] >= 1
     /\ \E delivered_count \in {-1, 1} :
-        /\ messages' = ClearMessages(messages @@ (send_msg :> delivered_count), LAMBDA message: message = msg)
+        /\ messages' = ClearMessages(messages @@ (send_msg :> delivered_count), LAMBDA message: message = received_msg)
 
 \* Mark one message as processed
 MessageProcessed(msg) ==
