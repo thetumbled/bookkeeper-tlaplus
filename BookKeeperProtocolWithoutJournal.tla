@@ -25,7 +25,7 @@ CONSTANTS Bookies,                      \* The bookies available e.g. { B1, B2, 
           InflightLimit,                 \* Limit the number of unacknowledged add entry requests by the client
                                         \* which can reduce to state space significantly
           AllowCrash,                    \* Allows a crash with data loss
-          NotAllowRestartCorruptBookie  \* If a bookie crashes with data loss, it cannot restart
+          AllowRestartCorruptBookie     \* If a bookie crashes with data loss, it cannot restart
 Symmetry == Permutations(Bookies) \union Permutations(Clients)
 
 \* Model values
@@ -965,7 +965,7 @@ BookieRestartsWithDataLoss ==
                                                        /\ messages[msg] = 1
                                                     THEN -1
                                                     ELSE messages[msg]]
-        /\ IF ~NotAllowRestartCorruptBookie
+        /\ IF AllowRestartCorruptBookie
            THEN /\ b_entries' = [b_entries EXCEPT ![b] = {}]
                 /\ b_lac' = [b_lac EXCEPT ![b] = 0]
                 /\ b_fenced' = [b_fenced EXCEPT ![b] = FALSE] \* the fenced status is lost along with the entries
