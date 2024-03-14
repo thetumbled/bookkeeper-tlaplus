@@ -1,4 +1,4 @@
-------------------------- MODULE BookKeeperProtocol -------------------------
+------------------------- MODULE BookKeeperProtocolWithoutJournal -------------------------
 EXTENDS MessagePassing, Naturals, FiniteSets, FiniteSetsExt, Sequences, SequencesExt, Integers, TLC
 
 (*
