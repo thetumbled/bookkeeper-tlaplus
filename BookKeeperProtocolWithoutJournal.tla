@@ -1089,35 +1089,9 @@ AllCommittedEntriesReachAckQuorum ==
                 IN EntryIdReachesAckQuorum(fragment.ensemble, id)
          ELSE TRUE
 
-(***************************************************************************
-Invariant: Read order matches write order                                                        
-                                                                         
-Ordering is set by the client that writes the data as it sets the entry ids. 
-How data is stored is an implementation detail and not relevant to us. 
-The point of this invariant is that if a client were to read the entries back,
-would they read the data in the same order?
-This is achieved by ensuring that the entry id matches the entry body. In this
-spec the original client writes to the ledger with entry bodies that are
-monotonically increasing like the entry id does.
-***************************************************************************)
-NoOutOfOrderEntries ==
-    \A b \in Bookies :
-        \A entry \in b_entries[b] :
-            entry.id = entry.data
-
 (************************************************************
-Spec and Liveness                                        
-Liveness: Eventually, the spec is closed. There are no histories
-          where a ledger gets stuck.                 
+Spec
 ************************************************************)
-
-LedgerIsClosed ==
-    /\ meta_status = STATUS_CLOSED
-    /\ \E c \in clients : c.status = STATUS_CLOSED
-
-Liveness ==
-    /\ WF_vars(Next)
-    /\ []<>LedgerIsClosed
 
 Spec == Init /\ [][Next]_vars
 
