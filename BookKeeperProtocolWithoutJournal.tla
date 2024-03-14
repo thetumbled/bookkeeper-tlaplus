@@ -295,7 +295,7 @@ GetAddEntryResponse(add_entry_msg, success) ==
      success  |-> success]
 
 BookieSendsAddConfirmedResponse(bookie) ==
-    /\ b_available[b] = TRUE
+    /\ b_available[bookie] = TRUE
     /\ \E msg \in DOMAIN messages :
         /\ msg.bookie = bookie
         /\ ReceivableMessageOfType(messages, msg, AddEntryRequestMessage)
@@ -677,7 +677,7 @@ GetFencingReadLacResponseMessage(msg) ==
      lac    |-> b_lac[msg.bookie]]
 
 BookieSendsFencingReadLacResponse(bookie) ==
-    /\ b_available[b] = TRUE
+    /\ b_available[bookie] = TRUE
     /\ \E msg \in DOMAIN messages :
         /\ msg.bookie = bookie
         /\ ReceivableMessageOfType(messages, msg, FenceRequestMessage)
@@ -789,7 +789,7 @@ GetReadResponseMessage(msg) ==
                   ELSE NoSuchEntry]
 
 BookieSendsReadResponse(bookie) ==
-    /\ b_available[b] = TRUE
+    /\ b_available[bookie] = TRUE
     /\ \E msg \in DOMAIN messages :
         /\ msg.bookie = bookie
         /\ ReceivableMessageOfType(messages, msg, ReadRequestMessage)
