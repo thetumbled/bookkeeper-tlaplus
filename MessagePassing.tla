@@ -31,6 +31,9 @@ VARIABLES messages
 (*       but the bookie process the read request first, and the add second.*)
 (***************************************************************************)
 
+\* Updated: remove the mapping instead of setting to 0 for better printing
+\*         in the error trace, or there will many useless messages info.
+
 ReadTimeoutForBookie(msgs, cid, bookie) ==
     \E msg \in DOMAIN msgs :
         /\ msgs[msg] = -1
@@ -52,27 +55,26 @@ ReadTimeoutCount(cid, ensemble, recovery) ==
     THEN Cardinality({ b \in ensemble : ReadTimeoutForBookie(messages, cid, b)})
     ELSE 0
 
+\* filter those messages Filter(_) return TRUE.
+ClearMessages(messages, Filter(_)) ==
+    messages' = [m \in {m \in DOMAIN messages : ~Filter(m)} |-> messages[m]]
+
 ClearWriteTimeout(cid, bookies, recovery) ==
-    messages' = [m \in DOMAIN messages |-> IF /\ (m.type = AddEntryRequestMessage \/ m.type = AddEntryResponseMessage)
-                                              /\ m.bookie \in bookies
-                                              /\ m.cid = cid
-                                              /\ m.recovery = recovery
-                                              /\ messages[m] = -1
-                                           THEN 0
-                                           ELSE messages[m]]
+    ClearMessages(messages, LAMBDA m: /\ (m.type = AddEntryRequestMessage \/ m.type = AddEntryResponseMessage)
+                                      /\ m.bookie \in bookies
+                                      /\ m.cid = cid
+                                      /\ m.recovery = recovery
+                                      /\ messages[m] = -1)
 
 \* Ignore the undelivered messages that match.
 \* This is a state space optimization that makes these messages
 \* never get delivered
 IgnoreFurtherReadResponses(msg, ensemble) ==
-    messages' = [m \in DOMAIN messages |-> IF msg = m
-                                           THEN 0
-                                           ELSE IF /\ m.bookie \in ensemble
-                                                   /\ m.cid = msg.cid
-                                                   /\ (m.type = ReadRequestMessage \/ m.type = ReadResponseMessage)
-                                                   /\ messages[m] = 1
-                                                THEN 0
-                                                ELSE messages[m]]
+    ClearMessages(messages, LAMBDA m: \/ msg = m
+                                      \/ /\ m.bookie \in ensemble
+                                         /\ m.cid = msg.cid
+                                         /\ (m.type = ReadRequestMessage \/ m.type = ReadResponseMessage)
+                                         /\ messages[m] = 1)
 
 DelCountOf(msg, counts) ==
     LET pair == CHOOSE c \in counts : c[1] = msg
@@ -105,13 +107,13 @@ ProcessedOneAndSendAnother(received_msg, send_msg) ==
     /\ send_msg \notin DOMAIN messages
     /\ messages[received_msg] >= 1
     /\ \E delivered_count \in {-1, 1} :
-        /\ messages' = [messages EXCEPT ![received_msg] = @-1] @@ (send_msg :> delivered_count)
+        /\ messages' = ClearMessages(messages @@ (send_msg :> delivered_count), LAMBDA message: message = msg)
 
 \* Mark one message as processed
 MessageProcessed(msg) ==
     /\ msg \in DOMAIN messages
     /\ messages[msg] >= 1
-    /\ messages' = [messages EXCEPT ![msg] = @ - 1]
+    /\ ClearMessages(messages, LAMBDA message: message = msg)
 
 \* The message is of this type and has been delivered to the recipient
 ReceivableMessageOfType(msgs, msg, message_type) ==
