@@ -67,7 +67,8 @@ ASSUME WriteQuorum >= AckQuorum
 
 bookie_vars == << b_fenced, b_entries, b_lac >>
 meta_vars == << meta_status, meta_fragments, meta_last_entry, meta_version >>
-vars == << bookie_vars, clients, meta_vars, messages >>
+varsWithoutCrashesForView == << bookie_vars, clients, meta_vars, messages >>
+vars == << bookie_vars, clients, meta_vars, messages, crashes>>
 
 (***************************************************************************)
 (* Recovery Phases                                                         *)
@@ -224,7 +225,7 @@ ClientCreatesLedger(cid) ==
         /\ meta_status' = STATUS_OPEN
         /\ meta_version' = 1
         /\ meta_fragments' = Append(meta_fragments, fragment)
-    /\ UNCHANGED << bookie_vars, meta_last_entry, messages >>
+    /\ UNCHANGED << bookie_vars, meta_last_entry, messages, crashes >>
 
 (**************************************************************************
 ACTION: Send Add Entry Requests                                         
@@ -269,7 +270,7 @@ ClientSendsAddEntryRequests(cid) ==
            IN
             /\ entry_data <= SendLimit
             /\ SendAddEntryRequests(c, [id   |-> entry_data, data |-> entry_data])
-        /\ UNCHANGED << bookie_vars, meta_vars >>
+        /\ UNCHANGED << bookie_vars, meta_vars, crashes >>
 
 (**************************************************************************
 ACTION: A bookie receives an AddEntryRequestMessage, sends a confirm.   
@@ -300,7 +301,7 @@ BookieSendsAddConfirmedResponse ==
         /\ b_entries' = [b_entries EXCEPT ![msg.bookie] = @ \union {msg.entry}]
         /\ b_lac' = [b_lac EXCEPT ![msg.bookie] = msg.lac]
         /\ ProcessedOneAndSendAnother(msg, GetAddEntryResponse(msg, TRUE))
-        /\ UNCHANGED << b_fenced, clients, meta_vars >>
+        /\ UNCHANGED << b_fenced, clients, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: A bookie receives an AddEntryRequestMessage, sends a fenced response.                                                       
@@ -316,7 +317,7 @@ BookieSendsAddFencedResponse ==
         /\ b_fenced[msg.bookie] = TRUE
         /\ IsEarliestMsg(msg)
         /\ ProcessedOneAndSendAnother(msg, GetAddEntryResponse(msg, FALSE))
-        /\ UNCHANGED << bookie_vars, clients, meta_vars >>
+        /\ UNCHANGED << bookie_vars, clients, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: A client receive a success AddEntryResponseMessage              
@@ -379,12 +380,12 @@ ReceiveAddConfirmedResponse(c, is_recovery) ==
 ClientReceivesAddConfirmedResponse(cid) ==
     /\ clients[cid].status = STATUS_OPEN
     /\ ReceiveAddConfirmedResponse(clients[cid], FALSE)
-    /\ UNCHANGED << bookie_vars, meta_vars >>
+    /\ UNCHANGED << bookie_vars, meta_vars, crashes >>
 
 RecoveryClientReceivesAddConfirmedResponse(cid) ==
     /\ clients[cid].status = STATUS_IN_RECOVERY
     /\ ReceiveAddConfirmedResponse(clients[cid], TRUE)
-    /\ UNCHANGED << bookie_vars, meta_vars >>
+    /\ UNCHANGED << bookie_vars, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: A client receives a fenced AddEntryResponseMessage              
@@ -411,7 +412,7 @@ ClientReceivesAddFencedResponse(cid) ==
         /\ msg.bookie \in clients[cid].curr_fragment.ensemble
         /\ clients' = [clients EXCEPT ![cid] = [@ EXCEPT !.status = CLIENT_WITHDRAWN]]
         /\ MessageProcessed(msg)
-        /\ UNCHANGED << bookie_vars, meta_vars >>
+        /\ UNCHANGED << bookie_vars, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: A client performs an ensemble change.                           
@@ -515,13 +516,13 @@ ClientChangesEnsemble(cid) ==
     /\ clients[cid].status = STATUS_OPEN
     /\ meta_status = STATUS_OPEN
     /\ ChangeEnsemble(clients[cid], FALSE)
-    /\ UNCHANGED <<  bookie_vars, meta_status, meta_last_entry >>
+    /\ UNCHANGED <<  bookie_vars, meta_status, meta_last_entry, crashes >>
 
 RecoveryClientChangesEnsemble(cid) ==
     /\ clients[cid].status = STATUS_IN_RECOVERY
     /\ meta_status = STATUS_IN_RECOVERY
     /\ ChangeEnsemble(clients[cid], TRUE)
-    /\ UNCHANGED <<  bookie_vars, meta_status, meta_last_entry >>
+    /\ UNCHANGED <<  bookie_vars, meta_status, meta_last_entry, crashes >>
 
 (***************************************************************************
 ACTION: Client resends a Pending Add Op                                 
@@ -573,12 +574,12 @@ ResendPendingAddOp(c, is_recovery) ==
 ClientResendsPendingAddOp(cid) ==
     /\ clients[cid].status = STATUS_OPEN
     /\ ResendPendingAddOp(clients[cid], FALSE)
-    /\ UNCHANGED << bookie_vars, meta_vars >>
+    /\ UNCHANGED << bookie_vars, meta_vars, crashes >>
 
 RecoveryClientSendsPendingAddOp(cid) ==
     /\ clients[cid].status = STATUS_IN_RECOVERY
     /\ ResendPendingAddOp(clients[cid], TRUE)
-    /\ UNCHANGED << bookie_vars, meta_vars >>
+    /\ UNCHANGED << bookie_vars, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: A client closes its own ledger.                                 
@@ -598,7 +599,7 @@ ClientClosesLedgerSuccess(cid) ==
     /\ meta_status' = STATUS_CLOSED
     /\ meta_last_entry' = clients[cid].lac
     /\ meta_version' = meta_version + 1
-    /\ UNCHANGED << bookie_vars, meta_fragments, messages >>
+    /\ UNCHANGED << bookie_vars, meta_fragments, messages, crashes >>
 
 (***************************************************************************
 ACTION: A client fails to close its own ledger.                         
@@ -615,7 +616,7 @@ ClientClosesLedgerFail(cid) ==
     /\ meta_status # STATUS_OPEN
     /\ clients' = [clients EXCEPT ![cid] = [@ EXCEPT !.status = CLIENT_WITHDRAWN,
                                                      !.meta_version = Nil]]
-    /\ UNCHANGED << bookie_vars, meta_vars, messages >>
+    /\ UNCHANGED << bookie_vars, meta_vars, messages, crashes >>
 
 (***************************************************************************
 ACTION: A client starts ledger recovery.                                 
@@ -647,7 +648,7 @@ ClientStartsRecovery(cid) ==
                                       !.curr_fragment     = Last(meta_fragments),
                                       !.recovery_ensemble = Last(meta_fragments).ensemble]]
     /\ SendMessagesToEnsemble(GetFencedReadLacRequests(clients[cid], Last(meta_fragments).ensemble))
-    /\ UNCHANGED << bookie_vars, meta_fragments, meta_last_entry >>
+    /\ UNCHANGED << bookie_vars, meta_fragments, meta_last_entry, crashes >>
 
 (***************************************************************************
 ACTION: A bookie receives a fencing LAC request, sends a response.       
@@ -674,7 +675,7 @@ BookieSendsFencingReadLacResponse ==
         /\ ReceivableMessageOfType(messages, msg, FenceRequestMessage)
         /\ b_fenced' = [b_fenced EXCEPT ![msg.bookie] = TRUE]
         /\ ProcessedOneAndSendAnother(msg, GetFencingReadLacResponseMessage(msg))
-        /\ UNCHANGED << b_entries, b_lac, clients, meta_vars >>
+        /\ UNCHANGED << b_entries, b_lac, clients, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: A recovery client receives an LAC fence response                                        
@@ -706,7 +707,7 @@ ClientReceivesFencingReadLacResponse(cid) ==
                                               !.lac = IF lac > @ THEN lac ELSE @,
                                               !.lap = IF lac > @ THEN lac ELSE @]]
                 /\ MessageProcessed(msg)
-                /\ UNCHANGED << bookie_vars, meta_vars >>
+                /\ UNCHANGED << bookie_vars, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: Recovery client sends a recovery read request to each bookie.   
@@ -758,7 +759,7 @@ ClientSendsRecoveryReadRequests(cid) ==
                                                               !.curr_read_entry = next_entry_id,
                                                               !.fenced          = {}]] \* fenced no longer needed to reset
             /\ SendMessagesToEnsemble(GetRecoveryReadRequests(c, next_entry_id, c.recovery_ensemble))
-            /\ UNCHANGED << bookie_vars, meta_vars >>
+            /\ UNCHANGED << bookie_vars, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: A bookie receives a recovery read request, sends a response.              
@@ -786,7 +787,7 @@ BookieSendsReadResponse ==
            THEN b_fenced' = [b_fenced EXCEPT ![msg.bookie] = TRUE]
            ELSE UNCHANGED << b_fenced >>
         /\ ProcessedOneAndSendAnother(msg, GetReadResponseMessage(msg))
-        /\ UNCHANGED << b_entries, b_lac, clients, meta_vars >>
+        /\ UNCHANGED << b_entries, b_lac, clients, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: Recovery client receives a read response.                                
@@ -871,7 +872,7 @@ ClientReceivesRecoveryReadResponse(cid) ==
                       [] read_status = Unknown -> ReadUnknown(c, msg, read_responses)
                       [] read_status = NeedMoreResponses -> NotEnoughReadResponses(c, msg, read_responses)
                   /\ MessageProcessed(msg)
-            /\ UNCHANGED << bookie_vars, meta_vars >>
+            /\ UNCHANGED << bookie_vars, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: Client writes back a entry that was successfully read.          
@@ -903,7 +904,7 @@ ClientWritesBackEntry(cid) ==
                                                           op.entry,
                                                           c.curr_fragment.ensemble,
                                                           TRUE))
-        /\ UNCHANGED << bookie_vars, clients, meta_vars >>
+        /\ UNCHANGED << bookie_vars, clients, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: Recovery client closes the ledger.                              
@@ -939,7 +940,7 @@ RecoveryClientClosesLedger(cid) ==
         /\ meta_fragments' = c.fragments
         /\ meta_status' = STATUS_CLOSED
         /\ meta_last_entry' = c.last_recoverable_entry
-        /\ UNCHANGED << bookie_vars, messages >>
+        /\ UNCHANGED << bookie_vars, messages, crashes >>
 
 (***************************************************************************)
 (* ACTION: Bookie loses all data, starts empty                             *)
@@ -977,6 +978,7 @@ Init ==
     /\ b_entries = [b \in Bookies |-> {}]
     /\ b_lac = [b \in Bookies |-> 0]
     /\ clients = [cid \in Clients |-> InitClient(cid)]
+    /\ crashes = 0
 
 Next ==
     \* Bookies
