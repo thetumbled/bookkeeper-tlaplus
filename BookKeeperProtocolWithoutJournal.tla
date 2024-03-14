@@ -1044,8 +1044,8 @@ NoDivergenceBetweenClientAndMetaData ==
     IF meta_status = STATUS_CLOSED
     THEN \* exactly one client closed the ledger
          /\ Quantify(DOMAIN clients, LAMBDA c : 
-                /\ clients[c].status = STATUS_CLOSED
-                /\ clients[c].lac = meta_last_entry) = 1 
+            /\ clients[c].status = STATUS_CLOSED
+            /\ clients[c].lac = meta_last_entry) = 1
          \* no non-recovery client has an LAC that exceeds the meta_last_entry
          /\ \A c \in DOMAIN clients :
             \/ clients[c].status \in { Nil, STATUS_IN_RECOVERY, RECOVERY_ABORTED }
