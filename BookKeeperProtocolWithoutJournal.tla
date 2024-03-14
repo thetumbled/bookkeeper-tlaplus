@@ -24,7 +24,8 @@ CONSTANTS Bookies,                      \* The bookies available e.g. { B1, B2, 
                                         \* in order to keep the state space small. E.g 1 or 2
           InflightLimit,                 \* Limit the number of unacknowledged add entry requests by the client
                                         \* which can reduce to state space significantly
-          AllowCrash                    \* Allows a crash with data loss
+          AllowCrash,                    \* Allows a crash with data loss
+          NotAllowRestartCorruptBookie  \* If a bookie crashes with data loss, it cannot restart
 Symmetry == Permutations(Bookies) \union Permutations(Clients)
 
 \* Model values
@@ -52,7 +53,8 @@ VARIABLES meta_status,              \* the ledger status
 \* Bookie state (each is a function whose domain is the set of bookies) pertaining to this single ledger
 VARIABLES b_entries,                \* the entries stored in each bookie
           b_fenced,                 \* the fenced status of the ledger on each bookie (TRUE/FALSE)
-          b_lac                     \* the last add confirmed of the ledger on each bookie
+          b_lac,                     \* the last add confirmed of the ledger on each bookie
+          b_available               \* the available status of the bookie (TRUE/FALSE)
 
 \* the state of the clients
 VARIABLES clients                   \* the set of BookKeeper clients
@@ -65,7 +67,7 @@ ASSUME AckQuorum \in Nat
 ASSUME AckQuorum > 0
 ASSUME WriteQuorum >= AckQuorum
 
-bookie_vars == << b_fenced, b_entries, b_lac >>
+bookie_vars == << b_fenced, b_entries, b_lac, b_available>>
 meta_vars == << meta_status, meta_fragments, meta_last_entry, meta_version >>
 varsWithoutCrashesForView == << bookie_vars, clients, meta_vars, messages >>
 vars == << bookie_vars, clients, meta_vars, messages, crashes>>
@@ -292,8 +294,9 @@ GetAddEntryResponse(add_entry_msg, success) ==
      recovery |-> add_entry_msg.recovery,
      success  |-> success]
 
-BookieSendsAddConfirmedResponse ==
+BookieSendsAddConfirmedResponse(bookie) ==
     \E msg \in DOMAIN messages :
+        /\ msg.bookie = bookie
         /\ ReceivableMessageOfType(messages, msg, AddEntryRequestMessage)
         /\ IsEarliestMsg(msg)
         /\ \/ b_fenced[msg.bookie] = FALSE
@@ -301,7 +304,7 @@ BookieSendsAddConfirmedResponse ==
         /\ b_entries' = [b_entries EXCEPT ![msg.bookie] = @ \union {msg.entry}]
         /\ b_lac' = [b_lac EXCEPT ![msg.bookie] = msg.lac]
         /\ ProcessedOneAndSendAnother(msg, GetAddEntryResponse(msg, TRUE))
-        /\ UNCHANGED << b_fenced, clients, meta_vars, crashes >>
+        /\ UNCHANGED << b_fenced, b_available, clients, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: A bookie receives an AddEntryRequestMessage, sends a fenced response.                                                       
@@ -310,8 +313,9 @@ A bookie receives a non-recovery AddEntryRequestMessage, but the ledger
 is fenced so it responds with a fenced response.                                     
 ****************************************************************************)
 
-BookieSendsAddFencedResponse ==
+BookieSendsAddFencedResponse(bookie) ==
     \E msg \in DOMAIN messages :
+        /\ msg.bookie = bookie
         /\ ReceivableMessageOfType(messages, msg, AddEntryRequestMessage)
         /\ msg.recovery = FALSE
         /\ b_fenced[msg.bookie] = TRUE
@@ -670,12 +674,13 @@ GetFencingReadLacResponseMessage(msg) ==
      cid    |-> msg.cid,
      lac    |-> b_lac[msg.bookie]]
 
-BookieSendsFencingReadLacResponse ==
+BookieSendsFencingReadLacResponse(bookie) ==
     \E msg \in DOMAIN messages :
+        /\ msg.bookie = bookie
         /\ ReceivableMessageOfType(messages, msg, FenceRequestMessage)
         /\ b_fenced' = [b_fenced EXCEPT ![msg.bookie] = TRUE]
         /\ ProcessedOneAndSendAnother(msg, GetFencingReadLacResponseMessage(msg))
-        /\ UNCHANGED << b_entries, b_lac, clients, meta_vars, crashes >>
+        /\ UNCHANGED << b_entries, b_lac, b_available, clients, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: A recovery client receives an LAC fence response                                        
@@ -780,14 +785,15 @@ GetReadResponseMessage(msg) ==
                   THEN OK
                   ELSE NoSuchEntry]
 
-BookieSendsReadResponse ==
+BookieSendsReadResponse(bookie) ==
     \E msg \in DOMAIN messages :
+        /\ msg.bookie = bookie
         /\ ReceivableMessageOfType(messages, msg, ReadRequestMessage)
         /\ IF msg.fence = TRUE \* only recovery reads modelled which are always fenced
            THEN b_fenced' = [b_fenced EXCEPT ![msg.bookie] = TRUE]
            ELSE UNCHANGED << b_fenced >>
         /\ ProcessedOneAndSendAnother(msg, GetReadResponseMessage(msg))
-        /\ UNCHANGED << b_entries, b_lac, clients, meta_vars, crashes >>
+        /\ UNCHANGED << b_entries, b_lac, b_available, clients, meta_vars, crashes >>
 
 (***************************************************************************
 ACTION: Recovery client receives a read response.                                
@@ -953,15 +959,19 @@ BookieRestartsWithDataLoss ==
     /\ AllowCrash
     /\ crashes = 0
     /\ \E b \in Bookies :
-        /\ b_entries' = [b_entries EXCEPT ![b] = {}]
-        /\ b_lac' = [b_lac EXCEPT ![b] = 0]
         /\ crashes' = crashes + 1
         /\ messages' = [msg \in DOMAIN messages |-> IF /\ msg.type \in {AddEntryRequestMessage, FenceRequestMessage, ReadRequestMessage}
                                                        /\ msg.bookie = b
                                                        /\ messages[msg] = 1
                                                     THEN -1
                                                     ELSE messages[msg]]
-        /\ b_fenced' = [b_fenced EXCEPT ![b] = FALSE] \* the fenced status is lost along with the entries
+        /\ IF ~NotAllowRestartCorruptBookie
+           THEN /\ b_entries' = [b_entries EXCEPT ![b] = {}]
+                /\ b_lac' = [b_lac EXCEPT ![b] = 0]
+                /\ b_fenced' = [b_fenced EXCEPT ![b] = FALSE] \* the fenced status is lost along with the entries
+                /\ UNCHANGED b_available
+           ELSE /\ b_available' = [b_available EXCEPT ![b] = FALSE]
+                /\ UNCHANGED << b_entries, b_lac, b_fenced >>
         /\ UNCHANGED << clients, meta_vars >>
 
 (***************************************************************************)
@@ -977,16 +987,19 @@ Init ==
     /\ b_fenced = [b \in Bookies |-> FALSE]
     /\ b_entries = [b \in Bookies |-> {}]
     /\ b_lac = [b \in Bookies |-> 0]
+    /\ b_available = [b \in Bookies |-> TRUE]
     /\ clients = [cid \in Clients |-> InitClient(cid)]
     /\ crashes = 0
 
 Next ==
-    \* Bookies
     \/ BookieRestartsWithDataLoss
-    \/ BookieSendsAddConfirmedResponse
-    \/ BookieSendsAddFencedResponse
-    \/ BookieSendsFencingReadLacResponse
-    \/ BookieSendsReadResponse
+    \* Bookies
+    \/ \E b \in Bookies :
+        /\ b_available[b] = TRUE
+        /\ \/ BookieSendsAddConfirmedResponse(b)
+           \/ BookieSendsAddFencedResponse(b)
+           \/ BookieSendsFencingReadLacResponse(b)
+           \/ BookieSendsReadResponse(b)
     \/ \E cid \in Clients :
         \* original client
         \/ ClientCreatesLedger(cid)
