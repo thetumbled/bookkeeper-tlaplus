@@ -295,7 +295,8 @@ GetAddEntryResponse(add_entry_msg, success) ==
      success  |-> success]
 
 BookieSendsAddConfirmedResponse(bookie) ==
-    \E msg \in DOMAIN messages :
+    /\ b_available[b] = TRUE
+    /\ \E msg \in DOMAIN messages :
         /\ msg.bookie = bookie
         /\ ReceivableMessageOfType(messages, msg, AddEntryRequestMessage)
         /\ IsEarliestMsg(msg)
@@ -314,7 +315,8 @@ is fenced so it responds with a fenced response.
 ****************************************************************************)
 
 BookieSendsAddFencedResponse(bookie) ==
-    \E msg \in DOMAIN messages :
+    /\ b_available[bookie] = TRUE
+    /\ \E msg \in DOMAIN messages :
         /\ msg.bookie = bookie
         /\ ReceivableMessageOfType(messages, msg, AddEntryRequestMessage)
         /\ msg.recovery = FALSE
@@ -675,7 +677,8 @@ GetFencingReadLacResponseMessage(msg) ==
      lac    |-> b_lac[msg.bookie]]
 
 BookieSendsFencingReadLacResponse(bookie) ==
-    \E msg \in DOMAIN messages :
+    /\ b_available[b] = TRUE
+    /\ \E msg \in DOMAIN messages :
         /\ msg.bookie = bookie
         /\ ReceivableMessageOfType(messages, msg, FenceRequestMessage)
         /\ b_fenced' = [b_fenced EXCEPT ![msg.bookie] = TRUE]
@@ -786,7 +789,8 @@ GetReadResponseMessage(msg) ==
                   ELSE NoSuchEntry]
 
 BookieSendsReadResponse(bookie) ==
-    \E msg \in DOMAIN messages :
+    /\ b_available[b] = TRUE
+    /\ \E msg \in DOMAIN messages :
         /\ msg.bookie = bookie
         /\ ReceivableMessageOfType(messages, msg, ReadRequestMessage)
         /\ IF msg.fence = TRUE \* only recovery reads modelled which are always fenced
@@ -995,11 +999,10 @@ Next ==
     \/ BookieRestartsWithDataLoss
     \* Bookies
     \/ \E b \in Bookies :
-        /\ b_available[b] = TRUE
-        /\ \/ BookieSendsAddConfirmedResponse(b)
-           \/ BookieSendsAddFencedResponse(b)
-           \/ BookieSendsFencingReadLacResponse(b)
-           \/ BookieSendsReadResponse(b)
+        \/ BookieSendsAddConfirmedResponse(b)
+        \/ BookieSendsAddFencedResponse(b)
+        \/ BookieSendsFencingReadLacResponse(b)
+        \/ BookieSendsReadResponse(b)
     \/ \E cid \in Clients :
         \* original client
         \/ ClientCreatesLedger(cid)
