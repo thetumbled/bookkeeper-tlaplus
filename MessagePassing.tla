@@ -107,7 +107,7 @@ ProcessedOneAndSendAnother(received_msg, send_msg) ==
     /\ send_msg \notin DOMAIN messages
     /\ messages[received_msg] >= 1
     /\ \E delivered_count \in {-1, 1} :
-        /\ messages' = ClearMessages(messages @@ (send_msg :> delivered_count), LAMBDA message: message = received_msg)
+        /\ ClearMessages(messages @@ (send_msg :> delivered_count), LAMBDA message: message = received_msg)
 
 \* Mark one message as processed
 MessageProcessed(msg) ==
